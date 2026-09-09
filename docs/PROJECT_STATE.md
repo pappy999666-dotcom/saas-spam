@@ -1,7 +1,7 @@
 # PROJECT_STATE — SaaS Promoter
 
 > Single source of truth for "where the project is". Every session MUST read this first (spec §53).
-> Last updated: 2026-09-09 — Phase 0 complete, Phase 1 foundation in progress.
+> Last updated: 2026-09-09 — Phases 0–6 core built; runtime wiring (live socket + polling loop) is the next milestone.
 
 ## Product identity
 
@@ -18,21 +18,22 @@
 | Phase | State |
 |---|---|
 | 0 — Audit (repo, plogme, reference, Telegram API) | **COMPLETE** (see AUDIT.md, REFERENCE_AUDIT.md) |
-| 1 — Core foundation (parser, prefixes, identity, permissions, errors, operation engine, op-log) | **IN PROGRESS — core modules + tests done** (src/core/*) |
-| 2 — WhatsApp transport abstraction | Not started |
-| 3 — Link Preview Engine | Not started |
-| 4 — Core WhatsApp commands | Not started |
-| 5 — Status / Tag / Bulk operations | Not started |
-| 6 — Telegram control plane | Not started |
-| 7 — Telegram Mini App (where justified) | Not started |
-| 8 — Reference feature migration | Not started |
+| 1 — Core foundation | **COMPLETE** (errors, identity, permissions, parser, registry, operation engine, op-log, sessions, leases, renderer, flows) |
+| 2 — WhatsApp transport abstraction | **COMPLETE (code)** — capability-gated plogme adapter, normalizer, payload resolver, dispatcher. Live socket soak test pending |
+| 3 — Link Preview Engine | **COMPLETE (code)** — discover/fetch/normalize/thumbnail/validate/cache with SSRF guards; live fetch soak pending |
+| 4 — Core WhatsApp commands | **COMPLETE (code)** — menu, creategc, glink, leave(+all), pmt/dmt(+aliases), spmt/sdmt, listen, setprefix, setgpp |
+| 5 — Status / Tag / Bulk | **COMPLETE (code)** — gstatus(x), togstatus, allstatus(+d), tag, allchat on the shared engine |
+| 6 — Telegram control plane | **COMPLETE (code)** — typed Bot API client, poller, dashboard, live op views (single editable message) |
+| 7 — Telegram Mini App | Not started |
+| 8 — Reference feature migration (Validator Hub, Join Manager, Auto Promote) | Not started |
 | 9 — UX polish | Not started |
-| 10 — Reliability hardening | Not started |
+| 10 — Reliability hardening | Partial (classified retries, idempotency, lease restore done; soak/restart tests pending) |
 
 ## Verified quality gates (current)
 
 - `npx tsc -p tsconfig.json --noEmit` → clean.
-- `npx vitest run` → 20/20 tests passing (parser/prefix/chain, registry, identity/LID, permissions, error classification, operation engine).
+- `npx vitest run` → **51/51 tests passing** across 4 suites (core, phase2 transport/sessions/ui, preview, bulk/join).
+- `npm start` without TELEGRAM_BOT_TOKEN → safe scaffold smoke, exits cleanly.
 
 ## What exists in src/ so far
 
@@ -49,15 +50,15 @@
 
 ## Next recommended task
 
-Continue Phase 1 → Phase 2:
-1. Session registry + workspace model (data shapes decided in ARCHITECTURE.md §data-model).
-2. plogme capability-gated transport adapter (`transport/plogme-adapter.ts`), using only verified APIs.
-3. Listening-lease architecture (§30) as an inbound-admission gate.
-4. First commands on the new registry: `.menu`, `.ping` (vertical slice end-to-end).
+1. Runtime wiring: `WhatsAppRuntime` that binds registry sessions ↔ plogme sockets (start/stop/reconnect),
+   feeds normalized events into the dispatcher, and binds BulkRuntime.transport to real sockets.
+2. Persistence for sessions/workspaces beyond in-memory (file or Mongo) + encrypted auth state.
+3. Soak: live pairing + gstatus/allstatus against a real session; verify group-status semantics (L4).
+4. Phase 8 migration: Validator Hub, Join Manager, Auto Promote on the operation engine.
 
 ## Currently being worked on
 
-Phase 1 foundation just landed. Nothing half-finished; safe to continue from "Next recommended task".
+Nothing mid-flight. All Phase 0–6 code landed with tests; runtime soak testing is the next milestone.
 
 ## Handoff protocol (every session)
 
