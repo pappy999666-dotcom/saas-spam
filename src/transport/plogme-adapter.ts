@@ -33,7 +33,10 @@ export interface StartSocketOptions {
   phoneNumber: string;
   authStore: CacheManagerStore;
   events?: AdapterEvents;
-  /** Version override (keep pinned in production). */
+  /**
+   * Version override — leave undefined to use the plogme default (current).
+   * Pinning an older Baileys-era version breaks linking.
+   */
   version?: [number, number, number];
 }
 
@@ -67,14 +70,19 @@ interface ConnectionUpdate {
  */
 export async function startSocket(options: StartSocketOptions): Promise<SocketHandle> {
   const authState = await makeCacheManagerAuthState(options.authStore);
+  // No `version` override: plogme's default is current and required for
+  // pairing/linking to be accepted. No `browser` override either — the
+  // engine's default platform identity is what WhatsApp expects from this
+  // build (an arbitrary browser tuple can break linking).
   const socket = makeWASocket({
-    version: options.version ?? [2, 3000, 1015905247],
     auth: authState.state,
     logger: engineLogger,
     markOnlineOnConnect: false,
-    browser: ["SaaS Promoter", "Chrome", "1.0.0"],
-    fireInitQueries: false,
     syncFullHistory: false,
+    connectTimeoutMs: 20_000,
+    keepAliveIntervalMs: 15_000,
+    defaultQueryTimeoutMs: 60_000,
+    enableAutoSessionRecreation: false,
   } as Parameters<typeof makeWASocket>[0]);
 
   const events = socket.ev as { on: (event: string, listener: (payload: unknown) => void) => void } | undefined;
