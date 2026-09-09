@@ -20,7 +20,10 @@ const QUERY_TIMEOUT_MS = 15_000;
 export interface AuthStateStore extends CacheManagerStore {}
 
 export interface AdapterEvents {
-  onConnectionUpdate?: (state: { connection?: string; phoneNumber?: string; pairingCode?: string; error?: string }) => void;
+  /** Fired as soon as the pairing code exists (user should see it immediately). */
+  onPairingCode?: (code: string, phoneNumber: string) => void;
+  /** Fired on every connection.update (state machine source). */
+  onConnectionUpdate?: (state: { connection?: string; phoneNumber?: string }) => void;
 }
 
 export interface SocketHandle {
@@ -30,12 +33,14 @@ export interface SocketHandle {
 
 export interface StartSocketOptions {
   phoneNumber: string;
-  authStore: AuthStateStore;
+  authStore: CacheManagerStore;
   /** Exactly 8 letters/digits; undefined → engine generates a code. */
   customPairingCode?: string;
   events?: AdapterEvents;
   /** Version override (keep pinned in production). */
   version?: [number, number, number];
+  /** Resolve as soon as the pairing code is issued instead of waiting for open. */
+  waitForOpen?: boolean;
 }
 
 const silentLogger = () => undefined;
@@ -53,11 +58,23 @@ const engineLogger = Object.assign(
   },
 );
 
+interface ConnectionUpdate {
+  connection?: string;
+  pairingCode?: string;
+  qr?: string;
+  lastDisconnect?: { error?: { output?: { statusCode?: number } } };
+  me?: { id?: string; name?: string };
+}
+
 /**
- * Start a WhatsApp socket and wait (bounded) for a connection outcome:
- * paired+open, pairing code issued, or a classified failure.
+ * Start a WhatsApp socket. With waitForOpen=false (default) it resolves right
+ * after the pairing code is issued so the control plane can show it instantly;
+ * connection outcomes continue through events.
  */
 export async function startSocket(options: StartSocketOptions): Promise<SocketHandle> {
+  if (options.customPairingCode !== undefined && !/^[A-Z0-9]{8}$/iu.test(options.customPairingCode))
+    throw new ClassifiedError("invalid_target", "Custom pairing code must be exactly 8 letters or digits.");
+
   const authState = await makeCacheManagerAuthState(options.authStore);
   const socket = makeWASocket({
     version: options.version ?? [2, 3000, 1015905247],
@@ -70,41 +87,45 @@ export async function startSocket(options: StartSocketOptions): Promise<SocketHa
   } as Parameters<typeof makeWASocket>[0]);
 
   const events = socket.ev as { on: (event: string, listener: (payload: unknown) => void) => void } | undefined;
-  const waitForOutcome = new Promise<{ pairingCode?: string; phoneNumber?: string }>((resolve, reject) => {
-    const timeout = setTimeout(() => reject(new ClassifiedError("timeout", "Pairing timed out before the socket opened.")), 60_000);
+
+  const outcome = new Promise<"open" | "closed">((resolve, reject) => {
+    const timeout = setTimeout(
+      () => reject(new ClassifiedError("timeout", "Timed out waiting for the socket to open.")),
+      90_000,
+    );
     events?.on("connection.update", (raw: unknown) => {
-      const update = (raw ?? {}) as {
-        connection?: string;
-        pairingCode?: string;
-        qr?: string;
-        lastDisconnect?: { error?: { output?: { statusCode?: number } } };
-      };
-      if (update.pairingCode)
-        options.events?.onConnectionUpdate?.({ pairingCode: update.pairingCode, phoneNumber: options.phoneNumber });
+      const update = (raw ?? {}) as ConnectionUpdate;
+      if (update.pairingCode) options.events?.onPairingCode?.(update.pairingCode, options.phoneNumber);
+      options.events?.onConnectionUpdate?.({
+        ...(update.connection ? { connection: update.connection } : {}),
+        phoneNumber: options.phoneNumber,
+      });
       if (update.connection === "open") {
         clearTimeout(timeout);
-        options.events?.onConnectionUpdate?.({ connection: "open", phoneNumber: options.phoneNumber });
-        resolve({ ...(update.pairingCode ? { pairingCode: update.pairingCode } : {}), phoneNumber: options.phoneNumber });
+        resolve("open");
       }
       if (update.connection === "close") {
         clearTimeout(timeout);
         const code = update.lastDisconnect?.error?.output?.statusCode;
-        reject(classifyError(new Error(`socket closed (${code ?? "unknown"})`)));
+        if (options.waitForOpen) {
+          reject(classifyError(new Error(`socket closed (${code ?? "unknown"})`)));
+        } else {
+          resolve("closed");
+        }
       }
     });
   });
 
   // Pairing code request: verified API `requestPairingCode(phone, customPairingCode?)`
   // — custom codes MUST be exactly 8 chars (engine-enforced; see REFERENCE_AUDIT.md).
-  if (options.customPairingCode !== undefined && !/^[A-Z0-9]{8}$/iu.test(options.customPairingCode))
-    throw new ClassifiedError("invalid_target", "Custom pairing code must be exactly 8 letters or digits.");
-
   const requestPairing = socketMethod<string>(socket as PlogmeSocketLike, "requestPairingCode");
   const pairingCode = await requestPairing(options.phoneNumber, options.customPairingCode);
-  options.events?.onConnectionUpdate?.({ pairingCode, phoneNumber: options.phoneNumber });
+  options.events?.onPairingCode?.(pairingCode, options.phoneNumber);
 
-  await waitForOutcome;
-  logger.info("WhatsApp socket connected", { phoneNumber: options.phoneNumber });
+  if (options.waitForOpen === true) {
+    const result = await outcome;
+    if (result === "open") logger.info("WhatsApp socket opened", { phoneNumber: options.phoneNumber });
+  }
 
   return {
     socket,
@@ -155,7 +176,7 @@ export async function groupCreate(socket: WASocket, subject: string, phoneNumber
   const create = socketMethod<{ id: string }>(socket as PlogmeSocketLike, "groupCreate");
   const invited = phoneNumbers.map((digits) => phoneJidFromIdentity(digits)).filter((value): value is string => Boolean(value));
   const result = await callWithTimeout(() => create(subject, invited), QUERY_TIMEOUT_MS, "groupCreate");
-  return { jid: String(result?.id ?? "") };
+  return { jid: String((result as { id?: string } | undefined)?.id ?? "") };
 }
 
 export async function groupMetadata(socket: WASocket, jid: string): Promise<GroupMetadataResult> {

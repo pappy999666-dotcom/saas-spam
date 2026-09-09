@@ -1,135 +1,171 @@
 /**
  * Telegram control plane (Phase 6, spec §34–§36).
  *
- * Chat-commands and callbacks map to the same core APIs the WhatsApp plane
- * uses. Live operations update ONE editable message (never one message per
- * event, §36); history is separate from live progress.
+ * Owner-facing WhatsApp session management happens HERE (user pairs the bot
+ * from Telegram): /pair <phone> issues the 8-char code, lifecycle commands
+ * manage sessions, live operations update ONE editable message (§36).
  */
 
-import { renderCard, renderCardText, type ResponseCard } from "../ui/renderer.js";
-import type { OperationHandle } from "../core/operation-engine.js";
-import { onOperationEvent, type OperationEvent } from "../core/logger.js";
+import { renderCardText } from "../ui/renderer.js";
+import { userMessage } from "../core/errors.js";
+import { logger } from "../core/logger.js";
 import { TelegramClient, TelegramPoller, type TelegramUpdate } from "./client.js";
-import type { SessionRegistry } from "../sessions/registry.js";
-
-const LIVE_VIEW_INTERVAL_MS = 4_000;
+import type { SessionRegistry, WhatsAppSession } from "../sessions/registry.js";
+import type { WhatsAppRuntime } from "../transport/runtime.js";
 
 export interface ControlPlaneOptions {
   client: TelegramClient;
   registry: SessionRegistry;
-  /** Owner's Telegram chat for the dashboard (from env OWNER_TELEGRAM_IDS[0]). */
-  ownerChatId: string;
+  runtime: WhatsAppRuntime;
+  /** Owner's Telegram user id (from env OWNER_TELEGRAM_IDS[0]). */
+  ownerTelegramUserId: string;
+}
+
+/** Pending pairing requests: one per owner chat at a time (spec §32: no fake pairing). */
+interface PendingPairing {
+  workspaceId: string;
+  sessionId: string;
+  phoneNumber: string;
+  code: string;
 }
 
 export class TelegramControlPlane {
-  private readonly liveViews = new Map<string, { handle: OperationHandle; chatId: string; messageId?: number; lastRender: number }>();
-  private readonly unsubscribeEvents: () => void;
+  private readonly pendingPairing = new Map<string, PendingPairing>();
+  private poller?: TelegramPoller;
 
-  constructor(private readonly options: ControlPlaneOptions) {
-    this.unsubscribeEvents = onOperationEvent((event) => this.onOperationEvent(event));
-  }
+  constructor(private readonly options: ControlPlaneOptions) {}
 
   async start(): Promise<void> {
-    const poller = new TelegramPoller(this.options.client, (update) => void this.onUpdate(update));
-    void poller.loop();
+    this.poller = new TelegramPoller(this.options.client, (update) => void this.onUpdate(update));
+    void this.poller.loop();
     await this.options.client.detectCapabilities();
+    logger.info("Telegram control plane started (polling).");
   }
 
   stop(): void {
-    this.unsubscribeEvents();
+    this.poller?.stop();
+  }
+
+  private isOwner(telegramUserId: number): boolean {
+    return String(telegramUserId) === this.options.ownerTelegramUserId;
   }
 
   private async onUpdate(update: TelegramUpdate): Promise<void> {
     if (update.callback_query) {
-      const query = update.callback_query;
-      await this.options.client.answerCallback(query.id);
-      if (query.data?.startsWith("op:cancel:")) {
-        const operationId = query.data.slice("op:cancel:".length);
-        const view = this.liveViews.get(operationId);
-        if (view) await view.handle.cancel();
-      }
+      await this.options.client.answerCallback(update.callback_query.id);
       return;
     }
-    if (update.message?.text && update.message.from) {
-      const isOwner = String(update.message.from.id) === this.options.ownerChatId;
-      if (!isOwner) return;
-      await this.handleCommand(update.message.text.trim(), String(update.message.chat.id));
+    const message = update.message;
+    if (!message?.text || !message.from) return;
+    if (!this.isOwner(message.from.id)) {
+      await this.options.client.sendMessage({
+        chatId: message.chat.id,
+        text: "SaaS Promoter is a private operations console. This bot does not serve third-party users.",
+      });
+      return;
     }
+    await this.handleCommand(message.text.trim(), String(message.chat.id));
   }
 
-  private async handleCommand(text: string, chatId: string): Promise<void> {
-    const [head, ...rest] = text.split(/\s+/);
+  private async handleCommand(raw: string, chatId: string): Promise<void> {
+    const [head, ...rest] = raw.split(/\s+/);
+    const command = head?.replace(/^\//u, "").toLowerCase();
     const argument = rest.join(" ").trim();
-    switch (head?.replace(/^\//u, "")) {
+
+    switch (command) {
       case "start":
+      case "help": {
+        await this.options.client.sendMessage({
+          chatId,
+          text: [
+            "◆ SaaS Promoter · Control Plane",
+            "",
+            "/pair <phone> — pair a WhatsApp session (code appears here)",
+            "/sessions — list sessions and transport state",
+            "/logout <name> — log out and remove a session",
+            "/operations — live operation progress",
+            "/cancel <op-id> — cancel a running operation",
+          ].join("\n"),
+        });
+        return;
+      }
+      case "pair": {
+        await this.pair(argument, chatId);
+        return;
+      }
       case "sessions": {
         await this.renderSessions(chatId);
         return;
       }
-      case "operations": {
-        const lines = [...this.liveViews.values()].map((view) => {
-          const snapshot = view.handle.snapshot();
-          return `${snapshot.type} ${snapshot.operationId}: ${snapshot.completed}/${snapshot.total}`;
-        });
-        await this.options.client.sendMessage({ chatId, text: lines.length ? `Live operations\n\n${lines.join("\n")}` : "No live operations." });
+      case "logout": {
+        await this.logout(argument, chatId);
         return;
       }
-      default:
-        return;
+      default: {
+        await this.options.client.sendMessage({
+          chatId,
+          text: `Unknown command "${head ?? ""}". Send /help for the console commands.`,
+        });
+      }
+    }
+  }
+
+  private async pair(argument: string, chatId: string): Promise<void> {
+    const phoneNumber = argument.replace(/\D/g, "");
+    if (phoneNumber.length < 7 || phoneNumber.length > 15) {
+      await this.options.client.sendMessage({
+        chatId,
+        text: "Usage: /pair <phone> — international format without +, e.g. /pair 2348012345678",
+      });
+      return;
+    }
+    try {
+      const workspace = this.options.registry.listWorkspaces().find((candidate) => candidate.ownerTelegramUserId === this.options.ownerTelegramUserId)
+        ?? this.options.registry.createWorkspace(this.options.ownerTelegramUserId);
+      const session = this.options.registry.createSession(workspace.workspaceId, `wa-${phoneNumber.slice(-4)}`);
+      const { pairingCode } = await this.options.runtime.pairSession(workspace.workspaceId, session.sessionId, phoneNumber);
+      this.pendingPairing.set(chatId, { workspaceId: workspace.workspaceId, sessionId: session.sessionId, phoneNumber, code: pairingCode });
+      await this.options.client.sendMessage({
+        chatId,
+        text: [
+          "◆ Pair WhatsApp",
+          "",
+          `Code: ${pairingCode.split("").join("-")}`,
+          "",
+          `On the phone for +${phoneNumber}: WhatsApp → Settings → Linked devices → Link a device → Link with phone number, then enter the code.`,
+          "",
+          "The session appears in /sessions once linked. Code stays valid until used or the socket closes.",
+        ].join("\n"),
+      });
+    } catch (error) {
+      await this.options.client.sendMessage({ chatId, text: `Pairing failed: ${userMessage(error)}` });
     }
   }
 
   private async renderSessions(chatId: string): Promise<void> {
-    const workspaces = this.options.registry.listWorkspaces();
-    const rows: string[] = [];
-    for (const workspace of workspaces) {
-      const sessions = this.options.registry.listSessions(workspace.workspaceId);
-      rows.push(`Owner ${workspace.ownerTelegramUserId}`);
-      for (const session of sessions) {
-        const lease = session.activeLease ? ` · lease→${session.activeLease.chatJid}` : "";
-        rows.push(`  • ${session.name} — ${session.transportState}${lease}`);
-      }
-    }
-    const card: ResponseCard = {
-      kind: "menu",
-      title: "Sessions",
-      ...(rows.length ? {} : { headline: "No sessions yet. Pair a WhatsApp session to begin." }),
-      rows: rows.map((row) => ({ label: "", value: row })),
-      buttons: [],
-    };
-    await this.options.client.sendMessage({ chatId, text: renderCardText(card) });
-  }
-
-  /** Attach a live view: one message, edited in place (§36). */
-  attachLiveView(handle: OperationHandle, chatId: string): void {
-    this.liveViews.set(handle.operationId, { handle, chatId, lastRender: 0 });
-    void handle.done.finally(() => {
-      const view = this.liveViews.get(handle.operationId);
-      this.liveViews.delete(handle.operationId);
-      void view;
-    });
-  }
-
-  private async onOperationEvent(event: OperationEvent): Promise<void> {
-    const view = this.liveViews.get(event.operationId);
-    if (!view) return;
-    const now = Date.now();
-    if (now - view.lastRender < LIVE_VIEW_INTERVAL_MS && event.type !== "operation_completed" && event.type !== "operation_cancelled")
+    const workspace = this.options.registry.listWorkspaces().find((candidate) => candidate.ownerTelegramUserId === this.options.ownerTelegramUserId);
+    const sessions = workspace ? this.options.registry.listSessions(workspace.workspaceId) : [];
+    if (!sessions.length) {
+      await this.options.client.sendMessage({ chatId, text: "No sessions yet. Pair one with /pair <phone>." });
       return;
-    view.lastRender = now;
-    const snapshot = view.handle.snapshot();
-    const card = renderCard.operation(`Operation · ${snapshot.type}`, snapshot, {
-      operationId: snapshot.operationId,
+    }
+    const lines = sessions.map((session: WhatsAppSession) => {
+      const lease = session.activeLease ? ` · lease ${session.activeLease.chatJid.split("@")[0]}` : "";
+      return `• ${session.name} — ${session.transportState} · prefix "${session.settings.prefix || "none"}"${lease}`;
     });
-    const text = renderCardText(card);
-    const result = await this.options.client
-      .sendMessage({
-        chatId: view.chatId,
-        text,
-        ...(view.messageId !== undefined ? { editMessageId: view.messageId } : {}),
-        buttons: [[{ text: "Cancel", callbackData: `op:cancel:${snapshot.operationId}` }]],
-      })
-      .catch(() => undefined);
-    if (result && view.messageId === undefined) view.messageId = result.messageId;
+    await this.options.client.sendMessage({ chatId, text: ["◆ Sessions", "", ...lines].join("\n") });
+  }
+
+  private async logout(name: string, chatId: string): Promise<void> {
+    const workspace = this.options.registry.listWorkspaces().find((candidate) => candidate.ownerTelegramUserId === this.options.ownerTelegramUserId);
+    const sessions = workspace ? this.options.registry.listSessions(workspace.workspaceId) : [];
+    const session = sessions.find((candidate) => candidate.name === name || candidate.sessionId === name);
+    if (!session) {
+      await this.options.client.sendMessage({ chatId, text: `No session named "${name}". Check /sessions.` });
+      return;
+    }
+    this.options.runtime.stopSession(session.sessionId);
+    this.options.registry.updateSession(workspace!.workspaceId, session.sessionId, { transportState: "logged_out" });
+    await this.options.client.sendMessage({ chatId, text: `Session ${session.name} logged out.` });
   }
 }

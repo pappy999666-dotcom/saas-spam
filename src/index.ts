@@ -1,9 +1,9 @@
 /**
  * SaaS Promoter entrypoint.
  *
- * Boots the core, registers command families, and starts the planes that are
- * configured. Without a Telegram token it runs a safe smoke check and exits —
- * same contract as the reference (no half-started states).
+ * Boots core + command families + WhatsApp runtime + Telegram control plane.
+ * Without a Telegram token it runs a safe smoke check and exits — no
+ * half-started states.
  */
 
 import { env, assertProductionSecrets, ownerTelegramIds } from "./config/env.js";
@@ -14,7 +14,8 @@ import { registerGroupCommands } from "./commands/groups.js";
 import { registerJoinCommands } from "./commands/join.js";
 import { registerBulkCommands, type BulkRuntime } from "./commands/bulk.js";
 import { TelegramClient } from "./telegram/client.js";
-import { TelegramControlPlane as ControlPlane } from "./telegram/control-plane.js";
+import { TelegramControlPlane } from "./telegram/control-plane.js";
+import { WhatsAppRuntime, buildDispatcherFactory } from "./transport/runtime.js";
 
 async function main(): Promise<void> {
   assertProductionSecrets();
@@ -34,27 +35,43 @@ async function main(): Promise<void> {
   };
   registerBulkCommands(registry, { runtime: bulkRuntime, operations: new Map() });
 
+  const waRuntime = new WhatsAppRuntime(sessions, registry);
+  waRuntime.setDispatcher(
+    buildDispatcherFactory(sessions, registry, waRuntime, (workspaceId) => {
+      const workspace = sessions.getWorkspace(workspaceId);
+      return {
+        ownerTelegramUserId: workspace.ownerTelegramUserId,
+        sessionSudoPhones: [],
+        workspaceSudoPhones: [],
+      };
+    }),
+  );
+
   logger.info(`Registered ${registry.list().length} commands.`);
 
   const firstOwner = [...ownerTelegramIds][0];
 
   if (!env.TELEGRAM_BOT_TOKEN) {
     logger.info("Scaffold ready. Set TELEGRAM_BOT_TOKEN to start the control plane.");
-    logger.info(`Commands registered: ${registry.list().length}. Sessions hydrated: ${sessions.listWorkspaces().length} workspace(s).`);
+    logger.info(`Commands registered: ${registry.list().length}. Workspaces: ${sessions.listWorkspaces().length}.`);
     return;
+  }
+  if (!firstOwner) {
+    throw new Error("OWNER_TELEGRAM_IDS must contain the owner's Telegram user id.");
   }
 
   const client = new TelegramClient({ botToken: env.TELEGRAM_BOT_TOKEN });
-  const controlPlane = new ControlPlane({
+  const controlPlane = new TelegramControlPlane({
     client,
     registry: sessions,
-    ownerChatId: firstOwner ?? "",
+    runtime: waRuntime,
+    ownerTelegramUserId: firstOwner,
   });
   await controlPlane.start();
-  logger.info("Telegram control plane started (polling).");
 
   const shutdown = async (): Promise<void> => {
     controlPlane.stop();
+    for (const sessionId of waRuntime.listLive()) waRuntime.stopSession(sessionId);
     logger.info("Shutdown complete.");
     process.exit(0);
   };

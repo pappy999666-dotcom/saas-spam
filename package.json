@@ -17,6 +17,7 @@
     "format": "prettier --write ."
   },
   "dependencies": {
+    "dotenv": "^17.4.2",
     "plogme": "1.0.3",
     "sharp": "0.35.3",
     "zod": "^4.5.4"

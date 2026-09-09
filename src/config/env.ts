@@ -4,6 +4,7 @@
  * the minimum secret set.
  */
 
+import "dotenv/config";
 import { z } from "zod";
 
 const envSchema = z.object({
@@ -19,7 +20,7 @@ const envSchema = z.object({
   PAIRING_CUSTOM_CODE: z
     .string()
     .regex(/^[A-Z0-9]{8}$/iu, "Pairing code must be exactly 8 letters/digits")
-    .default("SAASPROM".slice(0, 8)),
+    .default("SAASSPAM"),
 });
 
 export const env = envSchema.parse(process.env);
