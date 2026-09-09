@@ -20,8 +20,6 @@ const QUERY_TIMEOUT_MS = 15_000;
 export interface AuthStateStore extends CacheManagerStore {}
 
 export interface AdapterEvents {
-  /** Fired as soon as the pairing code exists (user should see it immediately). */
-  onPairingCode?: (code: string, phoneNumber: string) => void;
   /** Fired on every connection.update (state machine source). */
   onConnectionUpdate?: (state: { connection?: string; phoneNumber?: string }) => void;
 }
@@ -34,13 +32,9 @@ export interface SocketHandle {
 export interface StartSocketOptions {
   phoneNumber: string;
   authStore: CacheManagerStore;
-  /** Exactly 8 letters/digits; undefined → engine generates a code. */
-  customPairingCode?: string;
   events?: AdapterEvents;
   /** Version override (keep pinned in production). */
   version?: [number, number, number];
-  /** Resolve as soon as the pairing code is issued instead of waiting for open. */
-  waitForOpen?: boolean;
 }
 
 const silentLogger = () => undefined;
@@ -67,14 +61,11 @@ interface ConnectionUpdate {
 }
 
 /**
- * Start a WhatsApp socket. With waitForOpen=false (default) it resolves right
- * after the pairing code is issued so the control plane can show it instantly;
- * connection outcomes continue through events.
+ * Start a WhatsApp socket. Resolves immediately after the socket exists;
+ * connection outcomes flow through events. The runtime owns the pairing-code
+ * request (readiness-gated, retried) — see transport/runtime.ts.
  */
 export async function startSocket(options: StartSocketOptions): Promise<SocketHandle> {
-  if (options.customPairingCode !== undefined && !/^[A-Z0-9]{8}$/iu.test(options.customPairingCode))
-    throw new ClassifiedError("invalid_target", "Custom pairing code must be exactly 8 letters or digits.");
-
   const authState = await makeCacheManagerAuthState(options.authStore);
   const socket = makeWASocket({
     version: options.version ?? [2, 3000, 1015905247],
@@ -88,44 +79,13 @@ export async function startSocket(options: StartSocketOptions): Promise<SocketHa
 
   const events = socket.ev as { on: (event: string, listener: (payload: unknown) => void) => void } | undefined;
 
-  const outcome = new Promise<"open" | "closed">((resolve, reject) => {
-    const timeout = setTimeout(
-      () => reject(new ClassifiedError("timeout", "Timed out waiting for the socket to open.")),
-      90_000,
-    );
-    events?.on("connection.update", (raw: unknown) => {
-      const update = (raw ?? {}) as ConnectionUpdate;
-      if (update.pairingCode) options.events?.onPairingCode?.(update.pairingCode, options.phoneNumber);
-      options.events?.onConnectionUpdate?.({
-        ...(update.connection ? { connection: update.connection } : {}),
-        phoneNumber: options.phoneNumber,
-      });
-      if (update.connection === "open") {
-        clearTimeout(timeout);
-        resolve("open");
-      }
-      if (update.connection === "close") {
-        clearTimeout(timeout);
-        const code = update.lastDisconnect?.error?.output?.statusCode;
-        if (options.waitForOpen) {
-          reject(classifyError(new Error(`socket closed (${code ?? "unknown"})`)));
-        } else {
-          resolve("closed");
-        }
-      }
+  events?.on("connection.update", (raw: unknown) => {
+    const update = (raw ?? {}) as ConnectionUpdate;
+    options.events?.onConnectionUpdate?.({
+      ...(update.connection ? { connection: update.connection } : {}),
+      phoneNumber: options.phoneNumber,
     });
   });
-
-  // Pairing code request: verified API `requestPairingCode(phone, customPairingCode?)`
-  // — custom codes MUST be exactly 8 chars (engine-enforced; see REFERENCE_AUDIT.md).
-  const requestPairing = socketMethod<string>(socket as PlogmeSocketLike, "requestPairingCode");
-  const pairingCode = await requestPairing(options.phoneNumber, options.customPairingCode);
-  options.events?.onPairingCode?.(pairingCode, options.phoneNumber);
-
-  if (options.waitForOpen === true) {
-    const result = await outcome;
-    if (result === "open") logger.info("WhatsApp socket opened", { phoneNumber: options.phoneNumber });
-  }
 
   return {
     socket,
