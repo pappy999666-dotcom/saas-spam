@@ -1,0 +1,1900 @@
+PROJECT: SAAS PROMOTER
+
+ROLE
+You are the lead staff engineer, software architect, reverse-engineering engineer, and UX/product engineer responsible for building “SaaS Promoter”.
+
+You are NOT allowed to start implementation immediately.
+
+This project is a large production-oriented Telegram + WhatsApp automation SaaS. Before changing code, you must deeply inspect, map, understand, and document the existing system and the current platform APIs.
+
+Your first responsibility is correctness and architecture.
+Your second responsibility is preserving proven functionality from the reference system.
+Your third responsibility is redesigning that functionality into a cleaner, more professional SaaS architecture and UX.
+
+Do not guess.
+Do not invent APIs.
+Do not replace proven library behavior with homemade implementations when the underlying library already provides the required capability.
+Do not remove existing working functionality simply because it looks old.
+Do not copy the old UI blindly.
+Do not begin feature implementation until the audit phase is complete.
+
+==================================================
+1. PROJECT IDENTITY
+==================================================
+
+Project name:
+
+SaaS Promoter
+
+Platform:
+
+1. Telegram
+2. WhatsApp
+
+Telegram:
+Use the latest Telegram Bot API available at implementation time.
+
+WhatsApp:
+Use the specified Bailey-compatible stack/package:
+
+https://www.npmjs.com/package/plogme
+
+Reference WhatsApp implementation:
+
+https://github.com/pappy999666-dotcom/pappy-omega-mini
+
+The reference repository is the blueprint/reference implementation.
+
+IMPORTANT:
+The reference implementation is NOT the final product.
+It is a source of proven behavior, architecture ideas, platform handling, pairing logic, workflows, and feature coverage.
+
+The new product must be redesigned around its own architecture, naming, UX, response system, state handling, and SaaS structure.
+
+==================================================
+2. PHASE 0 — MANDATORY FORENSIC AUDIT
+==================================================
+
+DO NOT IMPLEMENT FEATURES YET.
+
+First perform a complete repository and dependency audit.
+
+Audit:
+
+A. pappy-omega-mini
+B. every Telegram feature
+C. every WhatsApp/Bailey feature
+D. all session handling
+E. all pairing logic
+F. all menus
+G. all submenu flows
+H. all configuration systems
+I. all database models
+J. all queues
+K. all timers
+L. all background jobs
+M. all retry logic
+N. all media processing
+O. all link-preview logic
+P. all group-management logic
+Q. all auto-promotion logic
+R. validator functionality
+S. join-manager functionality
+T. live-log functionality
+U. workload functionality
+V. every command
+W. every alias
+X. every Telegram inline/button interaction
+Y. every pagination flow
+Z. every session-specific setting
+
+Create an explicit inventory.
+
+Nothing is considered “not important”.
+
+Map:
+
+COMMAND
+→ ALIAS
+→ HANDLER
+→ SERVICE
+→ API/LIBRARY METHOD
+→ STATE
+→ DATABASE
+→ RESPONSE
+→ ERROR HANDLING
+→ BACKGROUND JOB
+→ CLEANUP
+
+Do this for EVERY existing feature.
+
+Create a “REFERENCE FEATURE MATRIX”.
+
+Example:
+
+Feature | Existing implementation | Dependency/API | State | Telegram UI | WhatsApp equivalent | Keep | Redesign | Remove
+
+Do not leave unknowns hidden.
+
+Anything not understood must be marked UNKNOWN and investigated before implementation.
+
+==================================================
+3. REFERENCE REPOSITORY ACCESS
+==================================================
+
+Attempt to inspect:
+
+https://github.com/pappy999666-dotcom/pappy-omega-mini
+
+If the repository is private, inaccessible, renamed, or the supplied URL cannot be cloned:
+
+STOP repository-dependent implementation.
+
+Do not fabricate its contents.
+
+Request the correct repository access/source or mounted project files.
+
+If access succeeds, inspect the FULL repository.
+
+Do not inspect only README files.
+
+Inspect source, configuration, dependencies, database, utility modules, services, state machines, message handlers, background workers, session storage, pairing implementation, media handling, preview implementation, and every submenu.
+
+==================================================
+4. TELEGRAM CURRENT API AUDIT — MANDATORY
+==================================================
+
+Before implementing Telegram functionality, inspect the CURRENT official Telegram Bot API documentation.
+
+Do not rely on old training knowledge.
+
+Specifically audit the current API for:
+
+- Rich Messages
+- sendRichMessage
+- sendRichMessageDraft
+- RichText
+- RichTextCustomEmoji
+- RichBlockTable
+- InputRichBlockTable
+- RichBlockTableCell
+- RichBlockButtons
+- RichBlockExpandableBlockQuotation
+- RichBlockDocument
+- RichBlockPhoto
+- RichBlockVideo
+- RichBlockAudio
+- RichBlockVoiceNote
+- RichBlockCollage
+- RichBlockSlideshow
+- RichBlockList
+- RichBlockDetails
+- message editing
+- streaming/draft behaviour
+- custom emoji
+- link previews
+- media reuse
+- buttons
+- message effects
+- forum/topic support
+- join request support
+- paid/broadcast constraints where relevant
+- current rate limits and platform limitations
+
+Current Telegram Bot API documentation is authoritative.
+
+At the time of this specification, Telegram Bot API 10.3 includes Rich Message functionality, including tables and custom emoji. Verify the live documentation again during implementation.
+
+Do not implement around outdated Telegram assumptions.
+
+==================================================
+5. TELEGRAM PREMIUM CUSTOM EMOJI
+==================================================
+
+Telegram Premium/custom emoji must be handled natively.
+
+Use the current Telegram API approach.
+
+Do NOT simulate custom emoji using images.
+Do NOT convert custom emoji into stickers manually.
+Do NOT render fake Unicode substitutes when the native custom emoji facility is available.
+
+Use native RichTextCustomEmoji/custom emoji entities where appropriate.
+
+The owner Premium condition and current API restrictions must be verified against the latest official Telegram documentation before implementation.
+
+Create a central Telegram rich-content renderer so every feature can use:
+
+- native custom emoji
+- buttons
+- quotations
+- tables
+- rich headings
+- lists
+- media
+- links
+- expandable content
+- progress/live output
+
+Do not scatter custom Telegram formatting logic throughout command handlers.
+
+Create one reusable rendering layer.
+
+==================================================
+6. TELEGRAM TABLES
+==================================================
+
+Use Telegram's native Rich Message tables.
+
+Do not fake tables with monospace text.
+
+For bordered/grid tables use the native table property equivalent to:
+
+is_bordered = true
+
+Support:
+
+- bordered
+- striped
+- compact
+- captions
+- cells
+- alignment
+- colspan
+- rowspan where supported
+- rich content inside cells where supported by the API
+
+The rendered result must look like a native Telegram table, not ASCII art.
+
+==================================================
+7. WHATSAPP ARCHITECTURAL RULE
+==================================================
+
+WhatsApp must be treated as a first-class platform.
+
+Do not implement a generic abstraction first and force Bailey into it.
+
+Instead:
+
+FIRST:
+Understand exactly what Bailey/plogme already supports.
+
+THEN:
+Design our service layer around those actual capabilities.
+
+Whenever a requirement says:
+
+“Bailey supports X”
+
+the implementation must first determine:
+
+1. Exact Bailey API
+2. Exact supported payload
+3. Exact limitations
+4. Exact response/event
+5. Exact errors
+6. Exact group/channel behavior
+7. Exact media support
+8. Exact session requirements
+9. Exact permission requirements
+10. Exact cleanup requirements
+
+If Bailey already does something correctly, use it.
+
+Do not recreate it unnecessarily.
+
+If Bailey provides a better implementation than a homemade solution, Bailey wins.
+
+==================================================
+8. WHATSAPP OPERATING SCOPE
+==================================================
+
+WhatsApp bot scope:
+
+GROUPS and WhatsApp CHANNELS only.
+
+The WhatsApp command system must NOT become a general DM command bot.
+
+DM is allowed only for:
+
+- pairing
+- onboarding
+- connection state
+- session information
+- user-specific settings
+- required private notifications
+- required setup instructions
+- required command/manual information
+
+Normal operational group commands should execute in authorized groups/channels.
+
+Do not listen to every incoming WhatsApp message globally.
+
+==================================================
+9. SMART LISTENING ARCHITECTURE
+==================================================
+
+The bot must NOT continuously consume and process every group message.
+
+Implement intent-based listening.
+
+Default state:
+
+- minimal passive event handling
+- no unnecessary message-content processing
+- no broad message listener performing expensive work
+
+When the user activates listening for a target group:
+
+.listen 5m
+
+or similar configuration,
+
+the bot temporarily enables command/event handling only for the relevant target/group context.
+
+Rules:
+
+- timer controlled
+- auto-expire
+- group-specific
+- command-specific when possible
+- no global listener
+- no unnecessary message storage
+- no unnecessary processing
+- no regression to normal sending functionality
+
+If another relevant command is opened in another target group, switch the active listener context cleanly.
+
+Prefer event routing and lightweight filters over processing every message.
+
+Do not confuse “not listening” with “bot being offline”.
+
+The bot must still be capable of sending scheduled/authorized outbound operations.
+
+==================================================
+10. WHATSAPP COMMAND MENU
+==================================================
+
+Primary:
+
+_menu
+
+Alias:
+
+_list
+
+The menu must present all supported commands in a polished, organized, readable interface.
+
+Do NOT use huge ASCII decorations.
+
+Use native rich formatting and Bailey-supported interactive components wherever available.
+
+Commands should be grouped by category:
+
+- Group Management
+- Promotion/Admin
+- Joining
+- Group Status
+- Tagging
+- Broadcast
+- Media/Profile
+- Session/Pairing
+- Configuration
+- Monitoring/Logs
+
+==================================================
+11. GROUP CREATION
+==================================================
+
+Command:
+
+_cgc
+
+Aliases:
+
+_creategc
+
+Flow:
+
+_cgc
+
+→ ask group name
+→ ask group image
+→ optional [Skip]
+→ ask description
+→ optional [Skip]
+→ ask group configuration
+→ optional [Skip]
+→ [Confirm]
+
+Use Bailey/native interactive buttons for Skip and Confirm when supported.
+
+Do not ask the user to type “skip” if a native button can perform that action.
+
+Do not advance the state machine until the expected answer/action arrives.
+
+Every interactive flow must have:
+
+- state ID
+- owner/session ID
+- target group where applicable
+- expiration time
+- cleanup
+- cancellation
+- duplicate prevention
+- recovery after temporary failure
+
+==================================================
+12. GROUP LEAVE
+==================================================
+
+Commands:
+
+_leavegc
+_lve
+_lvgc
+
+Target:
+
+group link/JID
+
+The command must resolve the target safely and leave the specific group.
+
+Bulk:
+
+_lvall
+
+Confirm before executing destructive bulk actions.
+
+Buttons:
+
+[YES]
+[NO]
+
+Do not accept arbitrary ambiguous confirmations if a native button is available.
+
+Bulk leave must respect authorization, platform limits, and permanent/transient errors.
+
+==================================================
+13. PROMOTE / DEMOTE
+==================================================
+
+Commands:
+
+_pmt
+_dmt
+
+Aliases:
+
+_promote
+_demote
+
+Target can be:
+
+- replied user
+- @mention
+- validated phone number
+
+Never display internal LID identifiers to the user.
+
+Preferred identity:
+
+@mention
+
+Fallback:
+
+verified WhatsApp number.
+
+==================================================
+14. SMART PROMOTE
+==================================================
+
+Command:
+
+_spmt
+
+Format:
+
+_spmt [group link/JID] [target @mention or verified number]
+
+Requirements:
+
+- target group must be resolvable
+- bot must have permission
+- target must be found
+- target must be eligible
+- handle target-not-in-group
+- handle invalid target
+- handle bot-not-admin
+- handle already-admin
+- handle permission failure
+
+If the user is not currently resolvable/found, generate a temporary manual-action code ONLY where the platform/library behavior supports such a safe mechanism.
+
+The code must:
+
+- be scoped to the exact user/session
+- be scoped to the exact target group
+- expire
+- have one-time semantics
+- stop listening after expiration
+- never become a permanent listener
+
+Provide a native copy button for the code when supported.
+
+For smart demote:
+
+_sdmt
+
+No code should be necessary.
+
+If target is not admin, report that clearly.
+
+==================================================
+15. JOIN SYSTEM
+==================================================
+
+Command:
+
+_join
+
+Support:
+
+- one group link
+- one JID
+- multiple approved targets
+- text files containing targets
+
+Process jobs through a queue.
+
+Requirements:
+
+- controlled concurrency
+- platform-compliant pacing
+- retry transient failures
+- stop/reclassify permanent failures
+- detailed status
+- no duplicate unnecessary attempts
+- clear reason for each failed/skipped item
+- no platform-bypass behaviour
+
+Example statuses:
+
+JOINED
+ALREADY_JOINED
+INVALID_TARGET
+REMOVED
+PERMISSION_DENIED
+RATE_LIMITED
+TEMPORARY_ERROR
+PERMANENT_FAILURE
+
+Do not implement mechanisms intended to evade WhatsApp anti-abuse systems.
+
+==================================================
+16. JOIN DELAY
+==================================================
+
+Command:
+
+_joind
+
+Configure join pacing.
+
+Range:
+
+5 seconds → 5 minutes
+
+For a single join:
+
+execute immediately where permitted.
+
+For multiple targets:
+
+queue jobs and apply configured pacing.
+
+Expose current delay and estimated workload.
+
+==================================================
+17. GROUP STATUS SYSTEM
+==================================================
+
+This is a PRIMARY feature.
+
+Use Bailey-native group-status capabilities wherever actually supported.
+
+Do not downgrade native group status into an ordinary chat message.
+
+Commands:
+
+_gstatus
+
+Alias:
+
+_gs
+
+Meaning:
+
+publish a supported payload to the CURRENT group's native group status.
+
+Commands:
+
+_togstatus
+
+Alias:
+
+_togs
+
+Meaning:
+
+publish payload to TARGET group status.
+
+Commands:
+
+_gstatusx
+
+Alias:
+
+_gsx
+
+Meaning:
+
+repeat the payload a configured number of times.
+
+Commands:
+
+_togstatusx
+
+Alias:
+
+_tgsx
+
+Target format:
+
+_togsx [target] [amount] [payload]
+
+Support quoted payloads.
+
+Support all payload types that Bailey actually supports for group status:
+
+- text
+- image
+- video
+- audio
+- voice-note where supported
+- sticker where supported
+- documents
+- quoted payloads
+- any other supported status media
+
+Do not assume payload compatibility.
+
+Perform a Bailey capability audit and build the renderer based on actual supported status payload types.
+
+==================================================
+18. GROUP STATUS REPEATS
+==================================================
+
+Never silently discard jobs.
+
+For repeated jobs:
+
+1. validate amount
+2. create job
+3. dispatch
+4. acknowledge every result
+5. retry transient failures
+6. classify permanent failures
+7. provide final summary
+
+Do not use uncontrolled infinite retry.
+
+Use bounded exponential backoff or platform-aware retry where required.
+
+The system must tolerate larger valid repeat amounts without blocking the event loop.
+
+Use worker queues.
+
+Never implement synchronous loops that freeze the bot.
+
+==================================================
+19. ALL GROUP STATUS
+==================================================
+
+Commands:
+
+_allstatus
+_alls
+_allstatusx
+_allsx
+
+Purpose:
+
+Broadcast an authorized payload to the native status of every eligible group for the account.
+
+Before execution, show:
+
+Total eligible groups: X
+Estimated workload: Y
+Configured delay: Z
+
+When complete:
+
+Posted: X
+Skipped: X
+Failed: X
+
+Classification must be meaningful.
+
+SKIPPED:
+delivery not possible by a known non-delivery condition after supported checks/retries.
+
+FAILED:
+permanent operational error such as bot/account removed, banned, permission failure, or target becoming unavailable.
+
+TEMPORARY:
+retry before final classification.
+
+Do not pretend success.
+
+Do not claim 100% delivery when WhatsApp rejected a target.
+
+For extremely large account workloads, use durable job queues and resumability rather than one giant synchronous operation.
+
+==================================================
+20. ALL STATUS DELAY
+==================================================
+
+Command:
+
+_allstatusd
+
+Alias:
+
+_allsd
+
+Range:
+
+5 seconds → 5 minutes
+
+Rules:
+
+- first eligible target should dispatch immediately if permitted
+- subsequent targets follow configured pacing
+- configuration persists across applicable jobs
+- new jobs must not silently override an already active job's immutable execution plan
+- jobs must be resumable
+- jobs must be cancellable
+- jobs must report progress
+
+==================================================
+21. ALL STATUS X
+==================================================
+
+Payload repeat amount:
+
+2–20
+
+Do not allow unlimited repeat amounts for this feature.
+
+Execute each target as:
+
+Target Group
+→ render payload
+→ dispatch repetitions
+→ wait configured inter-target delay
+→ next Target Group
+
+Avoid expensive rebuilding of the same rendered payload.
+
+==================================================
+22. TAG SYSTEM
+==================================================
+
+Commands:
+
+_tag
+_tagx
+
+Target:
+
+current group.
+
+Support payloads:
+
+- text
+- media
+- sticker
+- audio
+- voice note
+- quoted messages where compatible
+- any other supported taggable payload
+
+The tagging implementation must use Bailey-native group participant/tag/mention functionality.
+
+Never display LID as the user's visible identity.
+
+Use real @mention whenever supported.
+
+==================================================
+23. TAG SELF-RESPONSE
+==================================================
+
+The tag command has special recursion semantics.
+
+Example:
+
+tag hi
+
+→ tag + hi payload
+
+Example:
+
+tag tag hi
+
+→ tag + “tag hi”
+
+Example:
+
+tag tag tag yo
+
+→
+
+tag + “tag tag yo”
+tag + “tag yo”
+tag + “yo”
+
+The implementation must intentionally support this command recursion.
+
+IMPORTANT:
+
+This recursion is ONLY for this command family.
+
+Do not accidentally create a global self-triggering bot loop.
+
+Use deterministic command-depth parsing.
+
+Never allow arbitrary inbound-message recursion.
+
+==================================================
+24. FAST TAG EXECUTION
+==================================================
+
+Tagging is latency-sensitive.
+
+Do not add artificial delays unless platform/library requirements mandate them.
+
+Optimize for:
+
+- minimal parsing time
+- minimal network round trips
+- concurrent-safe participant resolution
+- reusable participant cache where valid
+- immediate dispatch
+- non-blocking execution
+
+Do not check unrelated group-open/listening state merely to slow the command down.
+
+==================================================
+25. ALL CHAT
+==================================================
+
+Commands:
+
+_allchat
+_allchatx
+
+Alias naming must remain consistent.
+
+Purpose:
+
+Send an authorized payload to eligible groups.
+
+x variant:
+
+_repeat amount + target progression + configurable delay.
+
+Delay command:
+
+_allchatd
+
+Range:
+
+5 seconds → 5 minutes
+
+Before starting a large job show:
+
+Eligible groups: X
+Estimated work: Y
+Delay: Z
+
+After completion:
+
+Sent: X
+Skipped: X
+Failed: X
+
+Every result must have a reason.
+
+==================================================
+26. LINK PREVIEW SYSTEM — CRITICAL
+==================================================
+
+This is one of the most important parts of the entire project.
+
+Audit the reference implementation's link preview system very deeply before changing it.
+
+You must understand:
+
+- URL extraction
+- metadata fetching
+- title extraction
+- description extraction
+- canonical URL
+- thumbnail selection
+- image URL handling
+- video thumbnail handling
+- redirect handling
+- cache
+- timeout
+- retries
+- invalid URL handling
+- content-type handling
+- duplicate fetch prevention
+- partial result handling
+- message rendering
+- media-specific preview behaviour
+
+Reference implementation:
+
+https://github.com/pappy999666-dotcom/pappy-omega-mini
+
+Also inspect:
+
+https://github.com/pappy999666-dotcom/pappy-omega-mini
+
+for the exact implementation used for reliable previews.
+
+Do not make the mistake of producing tiny or incomplete thumbnails.
+
+Do not accept “thumbnail exists” as sufficient.
+
+Validate that the resulting preview is usable.
+
+==================================================
+27. LINK PREVIEW CACHE
+==================================================
+
+Cache only COMPLETE and VALID preview objects.
+
+Never cache incomplete previews.
+
+Never cache a request while generation is still incomplete.
+
+During an active generation job:
+
+- other requests may share the same in-flight promise/future
+- avoid duplicate fetches
+- wait for completion where appropriate
+- only persist final successful cache data
+
+If generation fails:
+
+do not cache the incomplete result.
+
+Cache should include appropriate TTL/invalidation.
+
+Support:
+
+- metadata cache
+- thumbnail cache
+- normalized URL cache
+- in-flight request deduplication
+
+Avoid unnecessary network calls.
+
+==================================================
+28. UNIVERSAL LINK PREVIEW POLICY
+==================================================
+
+All bot responses containing URLs should use Telegram/WhatsApp-native link previews where supported and appropriate.
+
+Do NOT fabricate previews where a platform does not support them.
+
+For media captions where preview is not applicable, do not force a fake preview.
+
+For commands that don't contain URLs, do not inject meaningless URLs just to create previews.
+
+==================================================
+29. QUOTED MESSAGE SUPPORT
+==================================================
+
+All commands that logically operate on an existing message must support quoted/replied messages.
+
+Examples:
+
+- status
+- status repeat
+- tag
+- broadcast
+- forwarding/copying supported payloads
+- media operations
+
+Preserve payload metadata where platform APIs allow it.
+
+Do not convert every quoted media item into a re-upload if direct reuse/forwarding is supported.
+
+==================================================
+30. ALL MESSAGE TYPES
+==================================================
+
+The system must explicitly audit and handle all relevant Bailey payload types.
+
+Do not build only text/image support and claim “all media”.
+
+Create a payload capability matrix.
+
+Example:
+
+Payload | Receive | Quote | Tag | Group status | Broadcast | Repeat | Forward | Transform
+
+Test every supported type.
+
+==================================================
+31. LID HANDLING
+==================================================
+
+LID must NEVER appear as the user's visible identity.
+
+The UI must never expose internal LID identifiers.
+
+Build a dedicated identity normalization layer:
+
+internal WhatsApp identifiers
+→ canonical user identity
+→ @mention / phone number
+
+Preferred:
+
+@mention
+
+Fallback:
+
+verified phone number.
+
+If the mapping is ambiguous, fail safely and explain the issue.
+
+Do not blindly print internal IDs.
+
+==================================================
+32. PAIRING
+==================================================
+
+Use Bailey's correct native pairing/session approach.
+
+Do not invent a pairing mechanism if Bailey already provides one.
+
+Audit:
+
+- QR pairing
+- pairing code
+- session restoration
+- disconnect
+- reconnect
+- auth state
+- session storage
+- multi-session support
+- expired sessions
+- logout
+- credential corruption
+- account conflict
+- reconnect storms
+- cleanup
+
+Custom pairing code:
+
+SAAS-SPAM
+
+Verify whether this is supported by the exact Bailey/plogme build being used.
+
+Do not implement anything that attempts to bypass WhatsApp's pairing/account restrictions.
+
+==================================================
+33. PAIRING SUCCESS RESPONSE
+==================================================
+
+Immediately after successful pairing, send a polished private onboarding message.
+
+It must include:
+
+- connected status
+- account/session identity
+- how to open menu
+- basic usage instructions
+- where important settings are
+- how to disconnect
+- short reference/manual
+
+Keep it concise.
+
+No irrelevant paragraphs.
+
+==================================================
+34. WHATSAPP UI / RESPONSE DESIGN
+==================================================
+
+Use Bailey-native interactive features wherever supported.
+
+Rules:
+
+If a Copy button exists:
+USE COPY BUTTON.
+
+Do not write:
+
+“copy this manually”
+
+instead of providing the native copy action.
+
+If Yes/No buttons exist:
+USE YES/NO BUTTONS.
+
+Do not make users type yes/no.
+
+Use native menus/buttons/selectors where the platform supports them.
+
+Responses should be:
+
+- clean
+- structured
+- readable
+- modern
+- information-dense
+- concise
+- professionally styled
+
+Avoid oversized ASCII art.
+
+Use sections, headings, rich formatting, status badges, compact summaries, tables where the platform supports them.
+
+==================================================
+35. TELEGRAM AS THE MANAGEMENT PLANE
+==================================================
+
+Telegram and WhatsApp are independent operational planes.
+
+Telegram must not become a dependency that blocks WhatsApp operations.
+
+WhatsApp failure must not break Telegram.
+
+Telegram failure must not break WhatsApp.
+
+The systems must communicate only through deliberate shared services/state where required.
+
+Telegram is the management/control/monitoring plane for functionality that benefits from richer UI.
+
+Use Telegram's current Rich Message API to provide:
+
+- tables
+- live logs
+- pagination
+- rich buttons
+- session dashboards
+- task status
+- history
+- configuration interfaces
+- progress output
+- custom emoji
+
+==================================================
+36. TELEGRAM REFERENCE IMPLEMENTATION
+==================================================
+
+Fully audit pappy-omega-mini's Telegram implementation.
+
+Map every:
+
+- menu
+- submenu
+- button
+- callback
+- setting
+- modal
+- pagination
+- session switcher
+- auto-promote configuration
+- join manager
+- validator hub
+- workload
+- live-log implementation
+- pairing workflow
+- profile/group photo functions
+- approval functions
+
+Nothing should be omitted.
+
+Create a “Telegram Functional Parity Checklist”.
+
+Every existing function must be marked:
+
+MIGRATED
+REDESIGNED
+PATCHED
+DEPRECATED WITH REASON
+
+Never silently drop a feature.
+
+==================================================
+37. TELEGRAM UX REDESIGN
+==================================================
+
+Do not clone the old interface visually.
+
+Preserve functionality, redesign presentation.
+
+Goals:
+
+- easier for complete beginners
+- obvious next action
+- minimal confusion
+- clean hierarchy
+- modern controls
+- consistent navigation
+- proper back/close behaviour
+- pagination where required
+- persistent session selection where appropriate
+- scoped settings instead of accidental global settings
+- clear distinction between global settings and per-session settings
+
+==================================================
+38. SESSION SELECTION UX
+==================================================
+
+Where the reference system provides session selection:
+
+support:
+
+- active session
+- selected sessions
+- select all
+- deselect all
+- pagination
+- per-session operations
+- bulk operations
+
+Important:
+
+Do not make “select all active sessions” accidentally behave like a permanent setting.
+
+Selection state must be explicitly represented.
+
+Global settings and selected-session state must be separated.
+
+==================================================
+39. AUTO PROMOTE
+==================================================
+
+Audit the reference auto-promote feature and preserve its proven core functionality.
+
+Then redesign the user experience.
+
+Must show:
+
+- enabled/disabled
+- selected sessions
+- workload
+- recent activity
+- history
+- target information
+- success/failure states
+- relevant configuration
+
+Do not mix global settings with per-session state.
+
+==================================================
+40. PROFILE / GROUP PICTURE FUNCTIONS
+==================================================
+
+Implement and audit:
+
+_setpfp
+_setgpp
+_rmpfp
+_rmgpp
+
+Map them to Bailey-native media/profile/group picture capabilities.
+
+Do not implement from scratch where the reference system already has proven platform handling.
+
+==================================================
+41. APPROVAL FUNCTIONS
+==================================================
+
+Audit existing bulk approval functionality.
+
+Map it to the WhatsApp command system where applicable.
+
+Telegram and WhatsApp command names may differ, but the underlying job/service architecture should be reusable where appropriate.
+
+==================================================
+42. LIVE LOG SYSTEM
+==================================================
+
+Every long-running command must have progress reporting.
+
+Examples:
+
+- join batches
+- bulk status
+- bulk chat
+- repeat jobs
+- group operations
+- validator workload
+- auto promote
+- large session operations
+
+Telegram should show a live/progressive Rich Message.
+
+Use structured logs, not message spam.
+
+Example:
+
+┌ SaaS Promoter
+│ All Status
+├────────────
+│ Groups: 1,284
+│ Posted: 742
+│ Skipped: 31
+│ Failed: 4
+│ Remaining: 507
+│ Progress: 60.5%
+└────────────
+
+Use Telegram native Rich Messages/tables/quotations/buttons where appropriate.
+
+Do not create hundreds of progress messages.
+
+Prefer editing one progress message where supported.
+
+==================================================
+43. LIVE LOG COMMAND
+==================================================
+
+Redesign the reference live-log system.
+
+Create:
+
+- job ID
+- task state
+- current item
+- counters
+- ETA when meaningful
+- recent errors
+- final summary
+
+Example states:
+
+QUEUED
+RUNNING
+PAUSED
+RETRYING
+COMPLETED
+PARTIALLY_COMPLETED
+FAILED
+CANCELLED
+
+==================================================
+44. WORKLOAD
+==================================================
+
+Audit the reference workload functionality.
+
+Do not remove it.
+
+Determine:
+
+- what it measures
+- how it calculates estimates
+- queue state
+- active tasks
+- pending tasks
+- session utilization
+
+Then redesign it into the SaaS Promoter architecture.
+
+==================================================
+45. VALIDATOR HUB + JOIN MANAGER
+==================================================
+
+Preserve existing functionality.
+
+Do not unnecessarily rewrite working internals.
+
+Patch only what is needed.
+
+Do not break:
+
+- pagination
+- navigation
+- session selection
+- existing validators
+- join-manager workflows
+
+Any patch must include regression testing.
+
+==================================================
+46. SHARED JOB ARCHITECTURE
+==================================================
+
+Large operations must use durable job processing.
+
+Recommended conceptual flow:
+
+Command
+→ Parser
+→ Authorization
+→ Job Planner
+→ Queue
+→ Worker
+→ Platform Adapter
+→ Retry Policy
+→ Result Classifier
+→ Progress Event
+→ Live Log Renderer
+→ Final Summary
+
+Do not place long-running operations inside synchronous command handlers.
+
+Do not block the main event loop.
+
+==================================================
+47. RETRY ARCHITECTURE
+==================================================
+
+Retries must distinguish:
+
+TRANSIENT
+vs
+PERMANENT
+
+Transient:
+
+- timeout
+- network failure
+- temporary service unavailable
+- temporary throttling
+
+Permanent:
+
+- invalid target
+- removed account
+- banned target
+- insufficient permission
+- unsupported payload
+- nonexistent group
+- permanently unavailable destination
+
+Use bounded retry policies.
+
+Never infinite-retry a permanent failure.
+
+Never mark a job successful just because it was queued.
+
+==================================================
+48. ERROR HANDLING
+==================================================
+
+Every platform action must have normalized errors.
+
+Create:
+
+PlatformError
+├── AuthenticationError
+├── AuthorizationError
+├── NotFoundError
+├── RateLimitError
+├── TemporaryNetworkError
+├── UnsupportedPayloadError
+├── PermissionError
+└── UnknownPlatformError
+
+Map raw Bailey/Telegram errors into these categories.
+
+UI should show human-readable explanations.
+
+Debug logs may contain technical details.
+
+User UI must not.
+
+==================================================
+49. SAAS ARCHITECTURE
+==================================================
+
+The final architecture should separate:
+
+CORE
+├── auth
+├── users
+├── tenants/accounts
+├── sessions
+├── permissions
+├── commands
+├── jobs
+├── queue
+├── retry
+├── scheduler
+├── cache
+├── logging
+├── media
+└── identity
+
+PLATFORMS
+├── telegram
+└── whatsapp
+
+TELEGRAM
+├── renderer
+├── rich messages
+├── menus
+├── callbacks
+├── dashboards
+└── live logs
+
+WHATSAPP
+├── pairing
+├── groups
+├── status
+├── tagging
+├── profiles
+├── broadcast
+└── group management
+
+Do not couple business logic directly to Telegram or Bailey event handlers.
+
+==================================================
+50. CACHE ARCHITECTURE
+==================================================
+
+Create shared cache policies for:
+
+- link preview metadata
+- thumbnails
+- normalized URLs
+- identity mappings
+- capability discovery
+- group metadata
+- session metadata
+- in-flight requests
+
+Cache must have:
+
+- TTL
+- invalidation
+- size limits
+- failure rules
+- concurrency safety
+
+Never cache incomplete data.
+
+==================================================
+51. OBSERVABILITY
+==================================================
+
+Every long-running operation needs:
+
+- job ID
+- start time
+- end time
+- duration
+- session
+- command
+- target
+- result
+- retry count
+- error category
+
+Logs must support debugging without exposing sensitive authentication material.
+
+Never log:
+
+- auth credentials
+- pairing secrets
+- session keys
+- tokens
+- private credentials
+
+==================================================
+52. SECURITY
+==================================================
+
+Build proper authorization around every destructive and large-scale feature.
+
+Verify:
+
+- authenticated user
+- owning session
+- target ownership/permission
+- group membership
+- bot/admin privileges
+- command scope
+
+Prevent:
+
+- unauthorized session access
+- cross-user jobs
+- cross-session control
+- arbitrary group manipulation
+- command injection through payloads
+- SSRF through link-preview fetching
+- unbounded file upload processing
+- unbounded worker spawning
+- infinite retry
+- accidental recursive loops
+
+Link preview fetching must have SSRF protections.
+
+Media processing must have limits.
+
+==================================================
+53. PLATFORM COMPLIANCE
+==================================================
+
+Use the platform/library's legitimate capabilities.
+
+Do not implement mechanisms intended to bypass:
+
+- WhatsApp anti-abuse controls
+- Telegram rate restrictions
+- account restrictions
+- permission controls
+- pairing requirements
+- platform security
+
+Bulk operations must be:
+
+- authorized
+- queued
+- paced
+- observable
+- cancellable
+- retry-aware
+
+==================================================
+54. DATABASE DESIGN
+==================================================
+
+Design explicit models for at least:
+
+User
+Tenant
+TelegramAccount
+WhatsAppSession
+Group
+Membership
+Job
+JobItem
+JobAttempt
+CommandExecution
+LinkPreview
+MediaAsset
+IdentityMapping
+Setting
+SessionSetting
+GlobalSetting
+LiveLog
+AuditEvent
+
+Use strong indexes.
+
+Avoid storing unnecessary message history.
+
+==================================================
+55. CONFIGURATION SCOPE
+==================================================
+
+Every setting must declare its scope:
+
+GLOBAL
+TENANT
+SESSION
+GROUP
+JOB
+
+Never accidentally treat a session-specific setting as a global setting.
+
+==================================================
+56. TESTING
+==================================================
+
+Create unit tests for:
+
+- command parsing
+- aliases
+- identity normalization
+- LID hiding
+- quoted-message detection
+- payload classification
+- retry classification
+- cache correctness
+- preview completion
+- preview failure
+- recursive tag parsing
+- job planning
+- session selection
+- bulk summaries
+
+Integration tests for:
+
+- Telegram Rich Messages
+- Telegram tables
+- custom emoji
+- WhatsApp pairing
+- group creation
+- promote/demote
+- status
+- tagging
+- joining
+- link previews
+- media payloads
+
+Regression tests for all migrated pappy-omega-mini functions.
+
+==================================================
+57. ACCEPTANCE CRITERIA
+==================================================
+
+The project is NOT complete when the code compiles.
+
+It is complete only when:
+
+1. Every reference feature has been audited.
+2. Every retained feature has a migration status.
+3. Current Telegram API behaviour has been verified.
+4. Current Bailey/plogme behaviour has been verified.
+5. Every implemented command has tests.
+6. Long-running work uses queues/workers.
+7. Link preview handling is reliable and cache-safe.
+8. Native rich UI is used where available.
+9. Telegram tables are native Rich Message tables.
+10. Custom emoji are native Telegram custom emojis.
+11. WhatsApp LID is never exposed to users.
+12. Interactive controls use native buttons where possible.
+13. Pairing uses Bailey's correct mechanism.
+14. Existing reference pairing/session logic is preserved or improved.
+15. Telegram and WhatsApp failures are isolated.
+16. No existing reference feature has been accidentally dropped.
+17. Validator Hub and Join Manager remain functional.
+18. Auto Promote remains functional.
+19. Live logs work for all long-running tasks.
+20. Error classifications are accurate.
+21. Retry behaviour does not loop forever.
+22. Large workloads do not block the event loop.
+23. The UI is understandable to a first-time user.
+24. The system has no known critical security issues.
+25. A full regression suite passes.
+
+==================================================
+58. REQUIRED DEVELOPMENT ORDER
+==================================================
+
+Follow this exact order.
+
+PHASE 0
+Repository + dependency + platform audit.
+
+PHASE 1
+Reference feature inventory.
+
+PHASE 2
+Telegram current API audit.
+
+PHASE 3
+Bailey/plogme capability audit.
+
+PHASE 4
+Architecture proposal.
+
+PHASE 5
+Data model + job system.
+
+PHASE 6
+Core platform adapters.
+
+PHASE 7
+Telegram rich UI system.
+
+PHASE 8
+WhatsApp core/session/pairing.
+
+PHASE 9
+Group-management features.
+
+PHASE 10
+Status/tag/broadcast systems.
+
+PHASE 11
+Link preview system.
+
+PHASE 12
+Live logs/workload.
+
+PHASE 13
+Regression migration from reference system.
+
+PHASE 14
+Security hardening.
+
+PHASE 15
+Performance testing.
+
+PHASE 16
+End-to-end testing.
+
+==================================================
+59. FIRST OUTPUT — DO NOT CODE
+==================================================
+
+Your FIRST response/task output must be an AUDIT REPORT, not implementation.
+
+Return:
+
+A. Repository architecture map
+B. Dependency map
+C. Complete feature inventory
+D. Telegram feature inventory
+E. WhatsApp/Bailey feature inventory
+F. Pairing architecture
+G. Session architecture
+H. Link-preview architecture
+I. Media architecture
+J. Queue/job architecture
+K. Database architecture
+L. Current Telegram API compatibility findings
+M. Current Bailey/plogme compatibility findings
+N. Missing/unknown areas
+O. Risks
+P. Recommended target architecture
+Q. Migration plan
+R. Regression risks
+S. Security risks
+T. Performance bottlenecks
+U. Features that should NOT be copied as-is
+V. Features that should be preserved exactly
+W. Proposed project directory structure
+X. Proposed database schema
+Y. Proposed service boundaries
+Z. Implementation phases
+
+DO NOT modify source code until this report has been produced and reviewed.
+
+==================================================
+60. ABSOLUTE ENGINEERING RULE
+==================================================
+
+Never say:
+
+“this should work”
+
+without verifying the exact API/library behaviour.
+
+Never replace a platform-native implementation with an approximation unless technically necessary.
+
+Never remove a feature because it is difficult without reporting the blocker.
+
+Never silently change command semantics.
+
+Never expose internal platform identifiers.
+
+Never create fake UI when native UI exists.
+
+Never create fake Premium/custom emojis when Telegram native custom emoji exists.
+
+Never create fake tables when Telegram native Rich Message tables exist.
+
+Never start with UI before understanding the underlying state and platform capabilities.
+
+AUDIT FIRST.
+MAP EVERYTHING.
+VERIFY THE APIS.
+DESIGN THE ARCHITECTURE.
+THEN IMPLEMENT.
