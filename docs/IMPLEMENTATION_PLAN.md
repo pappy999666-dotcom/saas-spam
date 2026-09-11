@@ -1,42 +1,43 @@
-# IMPLEMENTATION_PLAN.md — phases and current plan
+# IMPLEMENTATION_PLAN.md — Phases & Execution Plan
 
-Follows spec §54. Update this file as phases progress; PROJECT_STATE.md tracks the tip.
+> **Master Plan Reference**: See [`docs/MASTER_PLAN.md`](./MASTER_PLAN.md) for the complete architectural blueprint, designed status aesthetic engine (`_gstatusd`, `_allstatusd`), URL title extraction pipeline, and universal AI/engineer handoff protocol.
 
-## Phase checklist
+## Phase Checklist
 
-- [x] **Phase 0 — Audit** (complete): repository, plogme runtime, reference project, Telegram 10.3.
-      Deliverables: AUDIT.md, REFERENCE_AUDIT.md, capability matrices, reuse map.
-- [~] **Phase 1 — Core foundation** (in progress):
-  - [x] env validation, logger, error classification, identity/LID, permissions
-  - [x] command parser (prefix modes, aliases, bounded chains) + typed registry
-  - [x] operation engine (progress/cancel/retry/skip/idempotency) + structured op events
-  - [ ] session/workspace registry + persistence shape
-  - [ ] listening leases (§30)
-  - [ ] response renderer skeleton (platform-neutral cards)
-- [ ] **Phase 2 — WhatsApp transport**: plogme adapter (capability-gated), message normalizer,
-      payload/quote/media resolver, mention resolver, outbound paths, pairing flow (QR + code).
-- [ ] **Phase 3 — Link Preview Engine** as a standalone subsystem.
-- [ ] **Phase 4 — Core WhatsApp commands**: menu, creategc, leave family, pmt/dmt (+ aliases),
-      spmt/sdmt, join/joind — all on the new registry + engine.
-- [ ] **Phase 5 — Status/Tag/Bulk**: gstatus family, togstatus(x), allstatus(x)+delay, tag family,
-      togctag(x), allchat(x)+delay — one operation engine, zero duplicated schedulers.
-- [ ] **Phase 6 — Telegram control plane**: typed Bot API 10.3 client, session dashboard,
-      live operation views (draft streaming / ephemeral where appropriate), history, settings.
-- [ ] **Phase 7 — Mini App** where it beats chat UX (dashboard); respect origin hardening.
-- [ ] **Phase 8 — Reference feature migration**: Validator Hub, Join Manager, Auto Promote,
-      profile/group tools — redesigned presentation, preserved semantics.
-- [ ] **Phase 9 — UX polish** audit of every screen/message.
-- [ ] **Phase 10 — Reliability**: reconnect/restart/duplicate/expired/cancel/concurrent scenarios.
-
-## Next actions (ordered)
-
-1. Session/workspace registry with prefix config + lease state (data model in ARCHITECTURE.md §3).
-2. Transport adapter + normalizer (Phase 2 start), pairing flow with custom code from env.
-3. Vertical slice: `.menu` + `.ping` end-to-end on WhatsApp, verified by tests.
-4. Response renderer (cards §50) used by that slice from day one.
-
-## Testing strategy (§55)
-
-Every subsystem lands with unit tests (see tests/core.test.ts as the standard). Integration
-checkpoints: parser suite (done), operation engine suite (done), transport adapter against a
-mock socket, preview engine against fixture HTML, Telegram client against a fake Bot API server.
+- [x] **Phase 0 — Forensic Audit**: Completed repository, plogme runtime, reference project, and Telegram Bot API 10.3 audit. (See `AUDIT.md`, `REFERENCE_AUDIT.md`).
+- [x] **Phase 1 — Core Foundation**: Error classification, identity normalization (zero LID leaks), role hierarchy, prefix parser with self-chain unwrapping, typed command registry, operation engine with progress/cancellation/retries. (Passed 51/51 tests).
+- [ ] **Phase 2 — Designed Status & Aesthetic Engine**:
+  - [ ] Saturated 20-color canvas palette + 12 ornamental Unicode frame templates.
+  - [ ] Canonical URL title extraction & OpenGraph metadata normalization.
+  - [ ] Status payload composer attaching verified rich link preview cards to status canvases.
+  - [ ] Commands: `_gstatusd` / `_dgstatus`, `_allstatusd` / `_dallstatus`, `_togstatusd`.
+- [ ] **Phase 3 — WhatsApp Transport & Session Management**:
+  - [ ] Capability-gated `plogme` adapter (Node 20+ ESM, strictly no raw method calls).
+  - [ ] Socket connection lifecycle, auto-reconnect with exponential backoff, and pairing with 8-character `SAASPROM` code.
+  - [ ] Scoped listening lease state machine (`.listen 5m`) — zero passive group eavesdropping.
+- [ ] **Phase 4 — Core WhatsApp Command Suite**:
+  - [ ] Discovery: `_menu`, `_list`, `_help`, `_ping`, `_health`.
+  - [ ] Groups: `_cgc` / `_creategc` (interactive flow), `_leavegc`, `_lvall` (with native [YES]/[NO] buttons), `_groups`.
+  - [ ] Moderation: `_pmt`, `_dmt`, `_spmt`, `_sdmt` (smart promote/demote with verified phone numbers).
+  - [ ] Join & Approvals: `_join`, `_joind`, `_pendingjoin`, `_approveall`, `_approveamt`, `_approvecountry`, `_rejectall`.
+  - [ ] Tagging: `_tag`, `_stag` (latency-optimized, bounded depth recursion up to 3).
+  - [ ] Bulk Broadcasts: `_allstatus`, `_allstatusx`, `_allchat`, `_allchatx`, `_allstatusd`, `_allchatd`.
+  - [ ] Media Tools: `_setgpp`, `_setpfp`, `_rmpfp`, `_mp3`, `_cs`, `_stickerinfo`.
+- [ ] **Phase 5 — Telegram Bot API 10.3 Control Plane**:
+  - [ ] Thin, typed HTTPS client with feature-detection and graceful degradation.
+  - [ ] Native bordered tables (`RichBlockTable`, `is_bordered = true`).
+  - [ ] Native custom emoji formatting (`RichTextCustomEmoji`).
+  - [ ] Draft progress streaming (`sendRichMessageDraft`) for Live Show feeds.
+  - [ ] Ephemeral settings and modular callback router.
+- [ ] **Phase 6 — Reference Feature Migration**:
+  - [ ] Validator Hub with 5-stage bucket state machine (`Main` → `Validating` → `Active`/`Dead`/`Retryable`).
+  - [ ] Join Manager with active-bucket consumption and cooldown cycles.
+  - [ ] Auto-Promote multi-scope scheduler (`SESSION`, `USER`, `GLOBAL`).
+- [ ] **Phase 7 — Workload Panel Subsystem**:
+  - [ ] Single-file standalone `index.js` worker generator.
+  - [ ] Pairing code handshake for external VPS/Pterodactyl panels.
+  - [ ] Panel sharing and child-workspace access delegation.
+- [ ] **Phase 8 — Hardening, Soak & Security Verification**:
+  - [ ] SSRF defense verification on preview engine.
+  - [ ] Socket restart soak tests under heavy group traffic.
+  - [ ] 100% test pass on Vitest test suite.

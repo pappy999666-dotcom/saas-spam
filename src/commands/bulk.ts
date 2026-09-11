@@ -11,13 +11,22 @@ import { startOperation, type OperationHandle, type OperationTarget } from "../c
 import { userMessage } from "../core/errors.js";
 import { parseDurationMs } from "./parse-duration.js";
 import type { CommandDefinition, CommandRegistry } from "../core/command-registry.js";
+import { createGroupStatusDesign, extractFirstHttpUrl } from "../ui/status-design.js";
+
+export interface StatusPayload {
+  text?: string;
+  backgroundColor?: string;
+  font?: number;
+  linkPreview?: unknown;
+}
 
 export interface BulkTransport {
   listGroupJids: () => Promise<Array<{ jid: string; name?: string }>>;
-  sendGroupStatus: (jid: string, payload: { text?: string }) => Promise<void>;
+  sendGroupStatus: (jid: string, payload: StatusPayload) => Promise<void>;
   sendGroupTextWithMentions: (jid: string, text: string, mentionJids: string[]) => Promise<void>;
   sendGroupTextHidden: (jid: string, text: string) => Promise<void>;
-  sendTargetGroupStatus: (jid: string, payload: { text?: string }) => Promise<void>;
+  sendTargetGroupStatus: (jid: string, payload: StatusPayload) => Promise<void>;
+  resolvePreviewTitle?: (url: string) => Promise<{ title?: string; preview?: unknown }>;
 }
 
 export interface BulkRuntime {
@@ -154,17 +163,103 @@ export function registerBulkCommands(registry: CommandRegistry, deps: BulkDeps):
       }),
   });
 
+  // ---- Designed group status (gstatusd / dgstatus) ----
+  registry.register({
+    name: "gstatusd",
+    aliases: ["dgstatus", "gstatusdesign"],
+    category: "status",
+    description: "Post an aesthetically designed status canvas with URL title extraction.",
+    run: (ctx) =>
+      card(ctx, async () => {
+        const text = ctx.rawPayload.trim() || ctx.quoted?.text || "";
+        if (!text) return renderCard.error("Designed status", "Provide text or quote a message.");
+        const transport = requireTransport(deps);
+        const url = extractFirstHttpUrl(text);
+        let extractedTitle: string | undefined;
+        let linkPreview: unknown;
+        if (url && transport.resolvePreviewTitle) {
+          try {
+            const res = await transport.resolvePreviewTitle(url);
+            extractedTitle = res.title;
+            linkPreview = res.preview;
+          } catch {
+            // Graceful fallback if preview fetch fails
+          }
+        }
+        const design = createGroupStatusDesign({
+          groupName: "Group Status",
+          text,
+          title: extractedTitle,
+          seed: `${workspaceOf(ctx)}:${sessionOf(ctx)}:${ctx.chatJid ?? "chat"}:${Date.now()}`,
+        });
+        await transport.sendGroupStatus(ctx.chatJid!, {
+          text: design.text,
+          backgroundColor: design.backgroundColor,
+          font: design.font,
+          linkPreview,
+        });
+        return renderCard.status("Designed Status", "Posted with " + design.backgroundColor, [
+          { label: "Title", value: design.title },
+          { label: "Font", value: `Style #${design.font}` },
+          { label: "Canvas", value: design.backgroundColor },
+        ]);
+      }),
+  });
+
+  // ---- Designed all status (allstatusd / dallstatus) ----
   registry.register({
     name: "allstatusd",
-    aliases: ["allsd"],
+    aliases: ["dallstatus", "dalls"],
+    category: "status",
+    description: "Broadcast group-aware designed statuses with URL titles to all groups.",
+    run: (ctx) =>
+      card(ctx, async () => {
+        const text = ctx.rawPayload.trim() || ctx.quoted?.text || "";
+        if (!text) return renderCard.error("Designed All Status", "Provide text or quote a message.");
+        const transport = requireTransport(deps);
+        const groups = (await transport.listGroupJids()).slice(0, TARGET_CAP);
+        if (!groups.length) return renderCard.error("Designed All Status", "No eligible groups resolved.");
+        const url = extractFirstHttpUrl(text);
+        let sharedTitle: string | undefined;
+        let sharedPreview: unknown;
+        if (url && transport.resolvePreviewTitle) {
+          try {
+            const res = await transport.resolvePreviewTitle(url);
+            sharedTitle = res.title;
+            sharedPreview = res.preview;
+          } catch {
+            // Non-blocking fallback
+          }
+        }
+        return startBulk(deps, workspaceOf(ctx), sessionOf(ctx), "ALLSTATUSD", groups.map((g) => ({ id: g.jid, ...(g.name ? { name: g.name } : {}) })), async (target) => {
+          const design = createGroupStatusDesign({
+            groupName: target.name ?? "WhatsApp Group",
+            title: sharedTitle,
+            text,
+            seed: `${workspaceOf(ctx)}:${sessionOf(ctx)}:${target.id}:${Date.now()}`,
+          });
+          await transport.sendGroupStatus(target.id, {
+            text: design.text,
+            backgroundColor: design.backgroundColor,
+            font: design.font,
+            linkPreview: sharedPreview,
+          });
+          return "completed";
+        });
+      }),
+  });
+
+  // ---- Broadcast Delay (broadcastdelay / postdelay) ----
+  registry.register({
+    name: "broadcastdelay",
+    aliases: ["postdelay", "setbroadcastdelay", "bulkdelay", "allsd"],
     category: "automation",
     description: "Set per-destination delay for bulk operations (5s–5m).",
     run: (ctx) =>
       card(ctx, async () => {
         const ms = parseDurationMs(ctx.args[0] ?? "");
         if (!ms || ms < 5_000 || ms > 5 * 60_000)
-          return renderCard.error("Bulk delay", "Provide a delay between 5s and 5m.", { next: ["allstatusd 30s"] });
-        // Operation-scoped rule (§21): only new operations pick this up.
+          return renderCard.error("Bulk delay", "Provide a delay between 5s and 5m.", { next: ["broadcastdelay 30s"] });
         deps.runtime.delayMs = ms;
         return renderCard.status("Bulk delay", `${Math.round(ms / 1000)}s per destination`, [
           { label: "Applies to", value: "New operations; running ones keep their own delay" },

@@ -92,12 +92,39 @@ describe("bulk command families", () => {
     expect(sent).toHaveLength(0);
   });
 
-  it("delay changes apply to new operations only (spec 21)", async () => {
-    const { registry, ctxBase, runtime } = makeEnv();
+  it("gstatusd generates an aesthetic canvas and delivers to group status", async () => {
+    const { registry, sent, ctxBase } = makeEnv();
+    const definition = registry.resolve("gstatusd")!;
+    const card = (await definition.run({ ...ctxBase, rawPayload: "Check out https://chat.whatsapp.com/TEST1234" })) as ResponseCard;
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.kind).toBe("gstatus");
+    expect(sent[0]?.text).toContain("https://chat.whatsapp.com/TEST1234");
+    expect(card.title).toBe("Designed Status");
+  });
+
+  it("allstatusd fans out designed statuses with unique seeds", async () => {
+    const { registry, sent, ctxBase, operations } = makeEnv();
     const definition = registry.resolve("allstatusd")!;
+    const card = (await definition.run({ ...ctxBase, rawPayload: "Broadcast https://example.com" })) as ResponseCard;
+    expect(card.kind).toBe("operation");
+    const handle = [...operations.values()][0]!;
+    const snapshot = await handle.done;
+    expect(snapshot.type).toBe("ALLSTATUSD");
+    expect(snapshot.completed).toBe(3);
+    expect(sent).toHaveLength(3);
+    expect(sent[0]?.text).toContain("https://example.com");
+  });
+
+  it("delay changes apply via broadcastdelay and allsd alias (spec 21)", async () => {
+    const { registry, ctxBase, runtime } = makeEnv();
+    const definition = registry.resolve("broadcastdelay")!;
     const card = (await definition.run({ ...ctxBase, args: ["30s"] })) as ResponseCard;
     expect(textOf(card)).toContain("30s");
     expect(runtime.delayMs).toBe(30_000);
+
+    const aliasDef = registry.resolve("allsd")!;
+    await aliasDef.run({ ...ctxBase, args: ["45s"] });
+    expect(runtime.delayMs).toBe(45_000);
   });
 });
 
